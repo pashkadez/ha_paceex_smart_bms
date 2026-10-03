@@ -17,6 +17,33 @@ RECONNECT_COOLDOWN = 2
 _LOGGER = logging.getLogger(__name__)
 
 
+def _celsius(raw: int) -> float:
+    """Convert the BMS temperature unit (0.1 K) to degrees Celsius."""
+    return round(raw / 10 - 273.15, 1)
+
+
+# Four (pack, index, value) records at the end of the master's status frame:
+# the extremes across ALL packs of the stack, with the pack and cell/sensor
+# that holds each one. Verified against live frames and the vendor app.
+_EXTREMES = (
+    ("system_max_cell_voltage", 43, lambda raw: raw / 1000),
+    ("system_min_cell_voltage", 47, lambda raw: raw / 1000),
+    ("system_max_temperature", 51, _celsius),
+    ("system_min_temperature", 55, _celsius),
+)
+# The unused half of each cell record in the cell frame carries temperatures;
+# slot order follows aiobmsble's PACEEX module. The last two are zero on
+# batteries that do not report MOSFET/ambient temperatures.
+_TEMPERATURE_SLOTS = (
+    "temperature_cell_1",
+    "temperature_cell_2",
+    "temperature_cell_3",
+    "temperature_cell_4",
+    "temperature_mosfet",
+    "temperature_ambient",
+)
+
+
 class PaceexError(Exception):
     """Base exception for PACEEX communication errors."""
 
@@ -136,6 +163,30 @@ class PaceexBmsApi:
         data.update(
             {f"cell_{index:02d}_voltage": value for index, value in enumerate(cells, 1)}
         )
+
+        # Only the pack acting as master answers the system query with real
+        # values; a slave returns all zeros, so zero means "not reported".
+        if pack_count := status[8]:
+            data["pack_count"] = pack_count
+        if rated_capacity := int.from_bytes(status[25:29], "big"):
+            data["rated_capacity"] = rated_capacity / 100
+        for key, offset, convert in _EXTREMES:
+            if len(status) < offset + 4 + 3:
+                continue
+            if raw := int.from_bytes(status[offset + 2 : offset + 4], "big"):
+                data[key] = convert(raw)
+                data[f"{key}_pack"] = status[offset]
+                data[f"{key}_index"] = status[offset + 1]
+        if "system_max_cell_voltage" in data and "system_min_cell_voltage" in data:
+            data["system_cell_delta"] = round(
+                data["system_max_cell_voltage"] - data["system_min_cell_voltage"], 3
+            )
+        for slot, key in enumerate(_TEMPERATURE_SLOTS):
+            offset = 14 + slot * 4
+            if slot >= cell_count or offset + 2 > len(cells_response) - 3:
+                break
+            if raw := int.from_bytes(cells_response[offset : offset + 2], "big"):
+                data[key] = _celsius(raw)
         return data
 
     @staticmethod

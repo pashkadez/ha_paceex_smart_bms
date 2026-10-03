@@ -230,5 +230,64 @@ class SessionTest(unittest.TestCase):
         self.assertEqual(sleep.call_args_list, [])
 
 
+# Frames captured from the master module of a 3-pack, 16-cell stack (no serial
+# numbers or credentials are present in either frame).
+MASTER_STATUS = bytes.fromhex(
+    "9a00000a000000330300000000000014f1000077fb00007bb1000075306164000000010000"
+    "000000000000010d0d1503100d1101040b6a03020b620bbf9d"
+)
+MASTER_CELLS = bytes.fromhex(
+    "9a00000a020000440214f2100d130b660d140b670d130b640d140b6a0d1400000d1400000d14"
+    "00000d1400000d1400000d1400000d1400000d1400000d1500000d1400000d1400000d120000"
+    "d91e9d"
+)
+
+
+class StackDataTest(unittest.TestCase):
+    """Test the stack-wide values decoded from real master frames."""
+
+    def test_real_master_frames(self) -> None:
+        data = PaceexBmsApi._parse_status(MASTER_STATUS, MASTER_CELLS)
+
+        self.assertEqual(data["pack_count"], 3)
+        self.assertEqual(data["rated_capacity"], 300.0)
+        self.assertEqual(data["design_capacity"], 316.65)
+        self.assertEqual(data["remaining_capacity"], 307.15)
+        # Extremes across all packs, each with the pack and cell that holds it.
+        self.assertEqual(data["system_max_cell_voltage"], 3.349)
+        self.assertEqual(data["system_max_cell_voltage_pack"], 1)
+        self.assertEqual(data["system_max_cell_voltage_index"], 13)
+        self.assertEqual(data["system_min_cell_voltage"], 3.345)
+        self.assertEqual(data["system_min_cell_voltage_pack"], 3)
+        self.assertEqual(data["system_min_cell_voltage_index"], 16)
+        self.assertEqual(data["system_cell_delta"], 0.004)
+        self.assertAlmostEqual(data["system_max_temperature"], 19.05, delta=0.06)
+        self.assertEqual(data["system_max_temperature_index"], 4)
+        self.assertAlmostEqual(data["system_min_temperature"], 18.25, delta=0.06)
+        self.assertEqual(data["system_min_temperature_pack"], 3)
+        # Four cell temperatures; MOSFET/ambient slots are zero on this battery.
+        self.assertAlmostEqual(data["temperature_cell_1"], 18.65, delta=0.06)
+        self.assertAlmostEqual(data["temperature_cell_4"], 19.05, delta=0.06)
+        self.assertNotIn("temperature_mosfet", data)
+        self.assertNotIn("temperature_ambient", data)
+
+    def test_slave_zero_status_reports_no_stack_values(self) -> None:
+        """A slave answers the system query with zeros, which means 'unreported'."""
+        zero_status = make_frame(62)
+        data = PaceexBmsApi._parse_status(zero_status, MASTER_CELLS)
+
+        for key in ("pack_count", "rated_capacity", "system_cell_delta"):
+            self.assertNotIn(key, data)
+        self.assertNotIn("system_max_temperature", data)
+        self.assertEqual(data["cell_count"], 16)
+
+    def test_short_status_frame_still_parses(self) -> None:
+        """Older firmware may send a status frame without the trailing records."""
+        data = PaceexBmsApi._parse_status(make_frame(40, fill_status), MASTER_CELLS)
+
+        self.assertEqual(data["state_of_charge"], 80)
+        self.assertNotIn("system_max_cell_voltage", data)
+
+
 if __name__ == "__main__":
     unittest.main()
