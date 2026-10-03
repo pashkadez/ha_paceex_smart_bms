@@ -1,0 +1,47 @@
+---
+name: Gitleaks
+"on":
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: gitleaks-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  gitleaks:
+    name: Gitleaks
+    # ubuntu-latest, not a self-hosted runner: this repo is public, and a PR
+    # workflow on a self-hosted runner would execute outsiders' code on it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check out Git history
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          # gitleaks scans history, not just the tip.
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Install Gitleaks
+        shell: bash
+        env:
+          GITLEAKS_VERSION: 8.30.1
+          # sha256 of the x64 release archive, so a swapped asset fails the job.
+          GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+        run: |
+          set -euo pipefail
+          install_dir="$(mktemp -d "${RUNNER_TEMP}/gitleaks.XXXXXX")"
+          archive="gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          curl --fail --silent --show-error --location --retry 3 \
+            "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/${archive}" \
+            --output "${install_dir}/${archive}"
+          printf '%s  %s\n' "$GITLEAKS_SHA256" "${install_dir}/${archive}" | sha256sum --check
+          tar -xzf "${install_dir}/${archive}" -C "$install_dir" gitleaks
+          echo "$install_dir" >> "$GITHUB_PATH"
+
+      - name: Scan Git history for secrets
+        run: gitleaks git --redact --verbose --no-banner --log-opts=HEAD .
