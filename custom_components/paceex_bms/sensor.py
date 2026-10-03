@@ -15,6 +15,7 @@ from homeassistant.const import (
     UnitOfElectricCurrent,
     UnitOfElectricPotential,
     UnitOfPower,
+    UnitOfTemperature,
 )
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity import EntityCategory
@@ -33,7 +34,13 @@ from .coordinator import PaceexDataUpdateCoordinator
 
 @dataclass(frozen=True, kw_only=True)
 class PaceexSensorEntityDescription(SensorEntityDescription):
-    """PACEEX sensor description."""
+    """PACEEX sensor description.
+
+    ``index_label`` names the attribute carrying the cell/sensor number of a
+    stack-wide extreme (the pack number is always exposed as ``pack``).
+    """
+
+    index_label: str | None = None
 
 
 SENSORS = (
@@ -79,11 +86,23 @@ SENSORS = (
         state_class=SensorStateClass.MEASUREMENT,
         icon="mdi:battery",
     ),
+    # The key stays "design_capacity" so existing entity IDs keep working, but
+    # the value is the measured full-charge capacity: on the master of a stack
+    # it is the pack count times the master pack's own measured capacity.
     PaceexSensorEntityDescription(
         key="design_capacity",
-        name="Design capacity",
+        name="Measured capacity",
         native_unit_of_measurement="Ah",
         icon="mdi:battery-high",
+    ),
+    PaceexSensorEntityDescription(
+        key="rated_capacity",
+        name="Rated capacity",
+        native_unit_of_measurement="Ah",
+        icon="mdi:battery-high",
+    ),
+    PaceexSensorEntityDescription(
+        key="pack_count", name="Pack count", icon="mdi:counter"
     ),
     PaceexSensorEntityDescription(
         key="cycles",
@@ -116,7 +135,56 @@ SENSORS = (
         device_class=SensorDeviceClass.VOLTAGE,
         state_class=SensorStateClass.MEASUREMENT,
     ),
+    PaceexSensorEntityDescription(
+        key="system_max_cell_voltage",
+        name="Maximum cell voltage (all packs)",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        index_label="cell",
+    ),
+    PaceexSensorEntityDescription(
+        key="system_min_cell_voltage",
+        name="Minimum cell voltage (all packs)",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        index_label="cell",
+    ),
+    PaceexSensorEntityDescription(
+        key="system_cell_delta",
+        name="Cell voltage delta (all packs)",
+        native_unit_of_measurement=UnitOfElectricPotential.VOLT,
+        device_class=SensorDeviceClass.VOLTAGE,
+        state_class=SensorStateClass.MEASUREMENT,
+        icon="mdi:delta",
+    ),
+    PaceexSensorEntityDescription(
+        key="system_max_temperature",
+        name="Maximum temperature (all packs)",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        index_label="sensor",
+    ),
+    PaceexSensorEntityDescription(
+        key="system_min_temperature",
+        name="Minimum temperature (all packs)",
+        native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+        device_class=SensorDeviceClass.TEMPERATURE,
+        state_class=SensorStateClass.MEASUREMENT,
+        index_label="sensor",
+    ),
 )
+
+TEMPERATURE_NAMES = {
+    "temperature_cell_1": "Cell temperature 1",
+    "temperature_cell_2": "Cell temperature 2",
+    "temperature_cell_3": "Cell temperature 3",
+    "temperature_cell_4": "Cell temperature 4",
+    "temperature_mosfet": "MOSFET temperature",
+    "temperature_ambient": "Ambient temperature",
+}
 
 
 DIAGNOSTIC_KEYS = frozenset({"consecutive_failures", "last_success"})
@@ -148,8 +216,22 @@ async def async_setup_entry(
     if serial_number is None:
         raise RuntimeError("PACEEX config entry is missing its serial-number unique ID")
 
-    descriptions = list(SENSORS)
-    for index in range(1, int(coordinator.data["cell_count"]) + 1):
+    # Create only the entities this module actually reports: the stack-wide and
+    # capacity-rating values are absent from slave modules and older firmware.
+    data = coordinator.data
+    descriptions = [description for description in SENSORS if description.key in data]
+    descriptions.extend(
+        PaceexSensorEntityDescription(
+            key=key,
+            name=name,
+            native_unit_of_measurement=UnitOfTemperature.CELSIUS,
+            device_class=SensorDeviceClass.TEMPERATURE,
+            state_class=SensorStateClass.MEASUREMENT,
+        )
+        for key, name in TEMPERATURE_NAMES.items()
+        if key in data
+    )
+    for index in range(1, int(data["cell_count"]) + 1):
         descriptions.append(
             PaceexSensorEntityDescription(
                 key=f"cell_{index:02d}_voltage",
@@ -192,6 +274,16 @@ class PaceexSensor(CoordinatorEntity[PaceexDataUpdateCoordinator], SensorEntity)
             self.coordinator.last_update_success
             and self.coordinator.consecutive_failures < UNAVAILABLE_AFTER_FAILURES
         )
+
+    @property
+    def extra_state_attributes(self) -> dict[str, int | None] | None:
+        """Expose which pack and cell/sensor holds a stack-wide extreme."""
+        label = self.entity_description.index_label
+        if label is None:
+            return None
+        data = self.coordinator.data or {}
+        key = self.entity_description.key
+        return {"pack": data.get(f"{key}_pack"), label: data.get(f"{key}_index")}
 
     @property
     def native_value(self):

@@ -5,6 +5,26 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Stack-wide values read from the master module's status frame: pack count,
+  rated capacity, and the highest and lowest cell voltage and temperature
+  across **all** packs (with the pack and cell/sensor number as attributes),
+  plus the all-pack cell voltage delta. Pack numbers can include packs that
+  have no Wi-Fi module of their own.
+- Cell temperature sensors (and MOSFET/ambient when the battery reports them),
+  decoded from the cell frame.
+- Tests built from frames captured on a real 3-pack, 16-cell stack.
+
+### Changed
+
+- The `design_capacity` sensor is now labelled **Measured capacity**. The key
+  and entity IDs are unchanged. On a master it equals the pack count times the
+  master pack's own measured capacity, so it is an estimate for the whole stack.
+- Sensors are created only for values the module actually reports.
+
 ## [1.2.0] - 2026-09-25
 
 ### Added

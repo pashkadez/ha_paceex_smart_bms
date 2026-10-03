@@ -54,13 +54,22 @@ The integration creates one Home Assistant device with the following sensors:
 | Battery current | A | Signed pack current |
 | Battery power | W | Calculated from pack voltage and current |
 | Remaining capacity | Ah | Remaining charge capacity |
-| Design capacity | Ah | Configured nominal capacity |
+| Measured capacity | Ah | Measured full-charge capacity (on a master: pack count × the master pack's own value) |
+| Rated capacity | Ah | Rated capacity of the whole stack |
+| Pack count | — | Number of packs in the stack (master module only) |
 | Battery cycles | — | BMS cycle counter |
 | Cell count | — | Number of cells reported by the BMS |
 | Cell 01…NN voltage | V | Voltage of each individual cell |
 | Minimum cell voltage | V | Lowest reported cell voltage |
 | Maximum cell voltage | V | Highest reported cell voltage |
 | Cell voltage delta | V | Difference between highest and lowest cell |
+| Max/min cell voltage (all packs) | V | Extremes across every pack; attributes `pack` and `cell` |
+| Cell voltage delta (all packs) | V | Spread between those two extremes |
+| Max/min temperature (all packs) | °C | Extremes across every pack; attributes `pack` and `sensor` |
+| Cell temperature 1…4, MOSFET, ambient | °C | This module's own temperature sensors, when reported |
+
+The stack-wide rows come from the master module only. A slave module answers
+the system query with zeros, so those sensors are not created for it.
 
 ## Requirements
 
