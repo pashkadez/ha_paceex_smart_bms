@@ -4,9 +4,9 @@
   "codeowners": ["@tuxevil"],
   "config_flow": true,
   "documentation": "https://github.com/tuxevil/ha_paceex_smart_bms",
-  "issue_tracker": "https://github.com/tuxevil/ha_paceex_smart_bms/issues",
   "integration_type": "device",
   "iot_class": "local_polling",
+  "issue_tracker": "https://github.com/tuxevil/ha_paceex_smart_bms/issues",
   "requirements": [],
   "version": "1.2.0"
 }
