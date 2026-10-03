@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- Voltages (and temperatures) were shown as whole numbers: with no suggested
+  display precision, Home Assistant falls back to its device-class default,
+  which is zero decimals for volts. Sensors now suggest 3 decimals for cell
+  voltages, 2 for pack voltage, current and capacities, and 1 for temperatures.
+  The suggestion applies when an entity is first registered, so existing
+  entities keep their old precision until the integration is removed and added
+  again, or the precision is changed in the entity settings.
+
 ### Added
 
 - Stack-wide values read from the master module's status frame: pack count,

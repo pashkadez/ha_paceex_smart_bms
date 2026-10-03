@@ -187,6 +187,23 @@ TEMPERATURE_NAMES = {
 }
 
 
+# Without a suggested precision Home Assistant applies its device-class default,
+# which shows volts with no decimals. The BMS resolves the pack voltage, current
+# and capacities to 0.01, cell voltages to 1 mV and temperatures to 0.1 degree.
+# Per-key values win over the per-unit defaults.
+PRECISION_BY_KEY = {
+    "voltage": 2,
+    "current": 2,
+    "power": 1,
+    "remaining_capacity": 2,
+    "design_capacity": 2,
+    "rated_capacity": 2,
+}
+PRECISION_BY_UNIT = {
+    UnitOfElectricPotential.VOLT: 3,
+    UnitOfTemperature.CELSIUS: 1,
+}
+
 DIAGNOSTIC_KEYS = frozenset({"consecutive_failures", "last_success"})
 
 DIAGNOSTICS = (
@@ -257,6 +274,10 @@ class PaceexSensor(CoordinatorEntity[PaceexDataUpdateCoordinator], SensorEntity)
         super().__init__(coordinator)
         self.entity_description = description
         self._attr_unique_id = f"{serial_number}_{description.key}"
+        self._attr_suggested_display_precision = PRECISION_BY_KEY.get(
+            description.key,
+            PRECISION_BY_UNIT.get(description.native_unit_of_measurement),
+        )
         self._attr_device_info = DeviceInfo(
             identifiers={(DOMAIN, serial_number)},
             manufacturer=MANUFACTURER,
